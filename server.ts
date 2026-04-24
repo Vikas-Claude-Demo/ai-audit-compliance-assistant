@@ -2,10 +2,16 @@ import express from 'express';
 import multer from 'multer';
 import * as xlsx from 'xlsx';
 import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
 const app = express();
+
+// Move health check to top for faster verification
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString(), env: process.env.NODE_ENV });
+});
 const PORT = Number(process.env.PORT) || 3000;
 
 // Configure multer for memory storage
@@ -32,10 +38,7 @@ interface FlaggedIssue {
   data: Transaction;
 }
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
-});
-
+// Preview endpoint
 app.post('/api/preview', upload.single('file'), async (req, res) => {
   console.log('Preview request received', { hasFile: !!req.file, filename: req.file?.originalname });
   try {
@@ -97,7 +100,6 @@ app.post('/api/audit', upload.single('file'), async (req, res) => {
     if (!hasExactMatch && process.env.GEMINI_API_KEY) {
       console.log('Headers do not match perfectly, requesting AI mapping...');
       try {
-        const { GoogleGenAI } = await import('@google/genai');
         const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const mapPrompt = `Given these headers from a financial spreadsheet: ${JSON.stringify(headers)}
         And these sample rows: ${JSON.stringify(sampleRows)}
@@ -230,7 +232,6 @@ app.post('/api/review', express.json(), async (req, res) => {
   }
 
   try {
-    const { GoogleGenAI } = await import('@google/genai');
     const genAI = new GoogleGenAI({ apiKey });
 
     const issueSample = issues.slice(0, 15).map((i: any) => ({
@@ -268,10 +269,8 @@ app.post('/api/review', express.json(), async (req, res) => {
 
 export default app;
 
-const isVercel = process.env.VERCEL === '1';
-const isProduction = process.env.NODE_ENV === 'production' || isVercel;
-
-if (!isProduction) {
+// Ensure startServer is only called in local development
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   startServer();
 }
 
