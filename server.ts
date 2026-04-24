@@ -292,8 +292,15 @@ async function generateWithFallback(prompt: string) {
   if (!apiKey) return null;
 
   const genAI = new GoogleGenAI({ apiKey });
-  // Expanded fallback list: 2.0 -> 1.5 -> 1.5-8b (most likely to have capacity)
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+  // Comprehensive fallback list using both latest and versioned IDs
+  const models = [
+    'gemini-2.0-flash', 
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash', 
+    'gemini-1.5-flash-002',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-pro'
+  ];
   
   for (const model of models) {
     try {
@@ -308,13 +315,12 @@ async function generateWithFallback(prompt: string) {
         return result.text;
       }
     } catch (error: any) {
-      const isRateLimit = error.status === 429 || 
-                          error.message?.includes('429') || 
-                          error.message?.includes('quota') ||
-                          error.message?.includes('limit');
-                          
-      if (isRateLimit && model !== models[models.length - 1]) {
-        console.warn(`[AI] ${model} rate limited, trying fallback...`);
+      const isRateLimit = error.status === 429 || error.message?.includes('429') || error.message?.includes('quota');
+      const isNotFound = error.status === 404 || error.message?.includes('not found');
+      
+      // If rate limited OR model not found, try the next one
+      if ((isRateLimit || isNotFound) && model !== models[models.length - 1]) {
+        console.warn(`[AI] ${model} unavailable (${error.status}), trying next...`);
         continue;
       }
       throw error;
