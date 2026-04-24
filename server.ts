@@ -224,20 +224,26 @@ app.post('/api/review', express.json(), async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
+    console.error('API Key Missing');
     return res.status(500).json({ error: 'Gemini API key not configured on server' });
   }
 
-  const issueSample = issues.slice(0, 15).map((i: any) => ({
-    row: i.rowIndex,
-    invoice: i.invoiceNumber,
-    type: i.issue,
-    details: i.details
+  if (!issues || !Array.isArray(issues)) {
+    console.error('Invalid issues data received');
+    return res.status(400).json({ error: 'Invalid audit data for review' });
+  }
+
+  const issueSample = issues.slice(0, 20).map((i: any) => ({
+    row: i.rowIndex || 'N/A',
+    invoice: i.invoiceNumber || 'N/A',
+    type: i.issue || 'General',
+    details: i.details || ''
   }));
 
   try {
     const prompt = `You are a GST Compliance Expert. Review this audit summary.
-    Total Records: ${summary.totalRecords}
-    Flagged Issues: ${summary.flaggedCount}
+    Total Records: ${summary?.totalRecords || issues.length}
+    Flagged Issues: ${summary?.flaggedCount || issues.length}
     
     Specific Flagged Samples (Row Index included): ${JSON.stringify(issueSample)}
     
@@ -252,25 +258,28 @@ app.post('/api/review', express.json(), async (req, res) => {
     const aiText = await generateWithFallback(prompt);
 
     if (!aiText) {
-      console.warn('AI returned empty response or was blocked by safety settings');
-      return res.status(500).json({ error: 'AI returned an empty response. This may be due to safety filters.' });
+      return res.status(500).json({ error: 'AI generation failed across all available models.' });
     }
 
     res.json({ text: aiText });
   } catch (error: any) {
-    console.error('Detailed AI Error:', error);
+    console.error('Final AI Error:', error);
     
-    // Friendly handling for Rate Limits (429)
-    if (error.status === 429 || (error.message && error.message.includes('429'))) {
+    const isRateLimit = error.status === 429 || 
+                        error.message?.includes('429') || 
+                        error.message?.includes('quota') ||
+                        error.message?.includes('limit');
+
+    if (isRateLimit) {
       return res.status(429).json({ 
         error: 'AI Rate Limit Exceeded', 
-        details: 'You have reached the free tier limit for both Gemini 2.0 and 1.5 models. Please wait about 60 seconds and try again.' 
+        details: 'All Gemini models (2.0, 1.5, 1.5-8b) are currently at their free-tier limit. Please wait 60 seconds.' 
       });
     }
 
     res.status(500).json({ 
       error: 'Failed to generate AI insights', 
-      details: error instanceof Error ? error.message : String(error) 
+      details: error.message || String(error)
     });
   }
 });
@@ -283,23 +292,29 @@ async function generateWithFallback(prompt: string) {
   if (!apiKey) return null;
 
   const genAI = new GoogleGenAI({ apiKey });
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  // Expanded fallback list: 2.0 -> 1.5 -> 1.5-8b (most likely to have capacity)
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
   
   for (const model of models) {
     try {
-      console.log(`Attempting AI generation with ${model}...`);
+      console.log(`[AI] Attempting ${model}...`);
       const result = await genAI.models.generateContent({
         model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }]
       });
       
       if (result && result.text) {
+        console.log(`[AI] Success with ${model}`);
         return result.text;
       }
     } catch (error: any) {
-      const isRateLimit = error.status === 429 || (error.message && error.message.includes('429'));
+      const isRateLimit = error.status === 429 || 
+                          error.message?.includes('429') || 
+                          error.message?.includes('quota') ||
+                          error.message?.includes('limit');
+                          
       if (isRateLimit && model !== models[models.length - 1]) {
-        console.warn(`${model} rate limited, falling back to next model...`);
+        console.warn(`[AI] ${model} rate limited, trying fallback...`);
         continue;
       }
       throw error;
