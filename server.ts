@@ -266,13 +266,27 @@ app.post('/api/review', express.json(), async (req, res) => {
     }
 
     res.json({ text: result.text });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Detailed AI Error:', error);
+    
+    // Friendly handling for Rate Limits (429)
+    if (error.status === 429 || (error.message && error.message.includes('429'))) {
+      return res.status(429).json({ 
+        error: 'AI Rate Limit Exceeded', 
+        details: 'You have reached the free tier limit for Gemini. Please wait about 60 seconds and try again.' 
+      });
+    }
+
     res.status(500).json({ 
       error: 'Failed to generate AI insights', 
       details: error instanceof Error ? error.message : String(error) 
     });
   }
+});
+
+// Info handlers for browser visits
+app.get(['/api/audit', '/api/preview', '/api/review'], (req, res) => {
+  res.send(`This is a ${req.path} endpoint. Please use POST to interact with it via the UI.`);
 });
 
 export default app;
