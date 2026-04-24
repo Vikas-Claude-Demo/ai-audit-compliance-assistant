@@ -4,6 +4,9 @@ import multer from 'multer';
 import * as xlsx from 'xlsx';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,21 +53,29 @@ app.post('/api/preview', upload.single('file'), async (req, res) => {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     
+    if (!worksheet) {
+      return res.status(400).json({ error: 'Sheet is empty or invalid' });
+    }
+
     const rawRows: any[] = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-    const headers = rawRows[0] as string[];
-    const data = rawRows.slice(1, 6).map(row => {
+    if (!rawRows || rawRows.length === 0) {
+      return res.json([]);
+    }
+
+    const headers = (rawRows[0] || []) as string[];
+    const data = rawRows.slice(1, 10).map(row => {
       const obj: any = {};
       headers.forEach((h, i) => {
-        obj[h] = row[i];
+        if (h) obj[h] = row[i];
       });
       return obj;
-    });
+    }).filter(r => Object.values(r).some(v => v !== undefined && v !== null));
 
     console.log('Preview data extracted', { rowCount: data.length });
     res.json(data);
   } catch (error) {
     console.error('Preview Error:', error);
-    res.status(500).json({ error: 'Failed to preview file' });
+    res.status(500).json({ error: 'Failed to preview file', details: error instanceof Error ? error.message : String(error) });
   }
 });
 
