@@ -1,0 +1,6 @@
+{
+  "name": "AI Audit & Compliance Assistant",
+  "description": "GST audit tool that identifies compliance issues in transaction data and uses AI to explain them.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

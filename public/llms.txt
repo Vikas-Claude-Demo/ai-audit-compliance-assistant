@@ -1,0 +1,21 @@
+# AI Audit & Compliance Assistant
+
+> Intelligent financial auditing and GST compliance powered by AI.
+
+This project provides an automated solution for auditing financial records, specifically focusing on GST compliance, anomaly detection, and data validation using Google's Gemini AI.
+
+## Key Information
+- **Domain**: Financial Technology (FinTech), RegTech
+- **Core Technology**: React, Express, Gemini 2.0 Flash
+- **Capabilities**: Excel parsing, GSTIN validation, Duplicate detection, AI-driven audit insights
+
+## Features
+- **GST Validation**: Ensures GSTIN presence and validates standard rates (5%, 12%, 18%, 28%).
+- **Calculation Audit**: Verifies GST amounts against base amounts and rates.
+- **Duplicate Detection**: Flags redundant invoice entries.
+- **AI Audit**: Leverages LLMs to provide context-aware auditing.
+
+## API Reference
+- `POST /api/preview`: Upload an Excel file to get a JSON preview of the first 5 rows.
+- `POST /api/audit`: Upload an Excel file for a comprehensive compliance audit.
+- `GET /api/health`: Health check endpoint.
