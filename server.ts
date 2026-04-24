@@ -100,7 +100,6 @@ app.post('/api/audit', upload.single('file'), async (req, res) => {
     if (!hasExactMatch && process.env.GEMINI_API_KEY) {
       console.log('Headers do not match perfectly, requesting AI mapping...');
       try {
-        const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const mapPrompt = `Given these headers from a financial spreadsheet: ${JSON.stringify(headers)}
         And these sample rows: ${JSON.stringify(sampleRows)}
         
@@ -109,14 +108,11 @@ app.post('/api/audit', upload.single('file'), async (req, res) => {
         If a field is missing, use null.
         Example: {"GSTIN": "Tax Number", "Amount": "Total Value"}`;
 
-        const result = await genAI.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: [{ role: 'user', parts: [{ text: mapPrompt }] }]
-        });
-        
-        const mapText = result.text.replace(/```json|```/g, '').trim();
-        mapping = JSON.parse(mapText);
-        console.log('AI Mapping received:', mapping);
+        const mapText = await generateWithFallback(mapPrompt);
+        if (mapText) {
+          mapping = JSON.parse(mapText.replace(/```json|```/g, '').trim());
+          console.log('AI Mapping received:', mapping);
+        }
       } catch (err) {
         console.error('AI Mapping failed, falling back to positional or exact matching:', err);
       }
@@ -231,16 +227,14 @@ app.post('/api/review', express.json(), async (req, res) => {
     return res.status(500).json({ error: 'Gemini API key not configured on server' });
   }
 
+  const issueSample = issues.slice(0, 15).map((i: any) => ({
+    row: i.rowIndex,
+    invoice: i.invoiceNumber,
+    type: i.issue,
+    details: i.details
+  }));
+
   try {
-    const genAI = new GoogleGenAI({ apiKey });
-
-    const issueSample = issues.slice(0, 15).map((i: any) => ({
-      row: i.rowIndex,
-      invoice: i.invoiceNumber,
-      type: i.issue,
-      details: i.details
-    }));
-
     const prompt = `You are a GST Compliance Expert. Review this audit summary.
     Total Records: ${summary.totalRecords}
     Flagged Issues: ${summary.flaggedCount}
@@ -255,17 +249,14 @@ app.post('/api/review', express.json(), async (req, res) => {
     IMPORTANT: In your explanation, ALWAYS refer to specific issues using their Row Index (e.g., "At Row 45, we see...") to provide direct context.
     Keep it very professional, structured with markdown, and concise.`;
 
-    const result = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }]
-    });
+    const aiText = await generateWithFallback(prompt);
 
-    if (!result || !result.text) {
+    if (!aiText) {
       console.warn('AI returned empty response or was blocked by safety settings');
       return res.status(500).json({ error: 'AI returned an empty response. This may be due to safety filters.' });
     }
 
-    res.json({ text: result.text });
+    res.json({ text: aiText });
   } catch (error: any) {
     console.error('Detailed AI Error:', error);
     
@@ -273,7 +264,7 @@ app.post('/api/review', express.json(), async (req, res) => {
     if (error.status === 429 || (error.message && error.message.includes('429'))) {
       return res.status(429).json({ 
         error: 'AI Rate Limit Exceeded', 
-        details: 'You have reached the free tier limit for Gemini. Please wait about 60 seconds and try again.' 
+        details: 'You have reached the free tier limit for both Gemini 2.0 and 1.5 models. Please wait about 60 seconds and try again.' 
       });
     }
 
@@ -283,6 +274,39 @@ app.post('/api/review', express.json(), async (req, res) => {
     });
   }
 });
+
+/**
+ * Helper to generate content with model fallback
+ */
+async function generateWithFallback(prompt: string) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const genAI = new GoogleGenAI({ apiKey });
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  
+  for (const model of models) {
+    try {
+      console.log(`Attempting AI generation with ${model}...`);
+      const result = await genAI.models.generateContent({
+        model,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      });
+      
+      if (result && result.text) {
+        return result.text;
+      }
+    } catch (error: any) {
+      const isRateLimit = error.status === 429 || (error.message && error.message.includes('429'));
+      if (isRateLimit && model !== models[models.length - 1]) {
+        console.warn(`${model} rate limited, falling back to next model...`);
+        continue;
+      }
+      throw error;
+    }
+  }
+  return null;
+}
 
 // Info handlers for browser visits
 app.get(['/api/audit', '/api/preview', '/api/review'], (req, res) => {
