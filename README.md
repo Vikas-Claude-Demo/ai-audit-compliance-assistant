@@ -23,7 +23,7 @@ The AI Audit & Compliance Assistant leverages generative AI and rule-based logic
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/ai-audit-compliance-assistant.git
+   git clone https://github.com/drdhavaltrivedi/ai-audit-compliance-assistant.git
    cd ai-audit-compliance-assistant
    ```
 

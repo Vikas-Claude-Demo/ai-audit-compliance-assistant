@@ -168,8 +168,7 @@ app.post('/api/review', express.json(), async (req, res) => {
 
   try {
     const { GoogleGenAI } = await import('@google/genai');
-    const genAI = new GoogleGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const genAI = new GoogleGenAI({ apiKey });
 
     const issueSample = issues.slice(0, 15).map((i: any) => ({
       row: i.rowIndex,
@@ -192,9 +191,12 @@ app.post('/api/review', express.json(), async (req, res) => {
     IMPORTANT: In your explanation, ALWAYS refer to specific issues using their Row Index (e.g., "At Row 45, we see...") to provide direct context.
     Keep it very professional, structured with markdown, and concise.`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    res.json({ text: response.text() });
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    });
+
+    res.json({ text: response.text });
   } catch (error) {
     console.error('AI Error:', error);
     res.status(500).json({ error: 'Failed to generate AI insights' });
