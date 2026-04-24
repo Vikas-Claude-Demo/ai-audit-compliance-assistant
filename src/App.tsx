@@ -187,7 +187,7 @@ export default function App() {
         setAiInsight("All transactions are compliant with the specified GST rules.");
       }
     } catch (err) {
-      setError('Audit failed. Ensure your file matches the required headers.');
+      setError('Audit process failed. Please ensure your file contains valid transaction data or try the demo sheet again.');
       console.error(err);
     } finally {
       setLoading(false);

@@ -49,11 +49,19 @@ app.post('/api/preview', upload.single('file'), async (req, res) => {
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data: Transaction[] = xlsx.utils.sheet_to_json(worksheet, { header: 0, range: 0 });
+    
+    const rawRows: any[] = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+    const headers = rawRows[0] as string[];
+    const data = rawRows.slice(1, 6).map(row => {
+      const obj: any = {};
+      headers.forEach((h, i) => {
+        obj[h] = row[i];
+      });
+      return obj;
+    });
 
     console.log('Preview data extracted', { rowCount: data.length });
-    // Return the first 5 rows for preview
-    res.json(data.slice(0, 5));
+    res.json(data);
   } catch (error) {
     console.error('Preview Error:', error);
     res.status(500).json({ error: 'Failed to preview file' });
@@ -71,9 +79,59 @@ app.post('/api/audit', upload.single('file'), async (req, res) => {
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data: Transaction[] = xlsx.utils.sheet_to_json(worksheet);
+    // Intelligent Header Mapping
+    const rawRows: any[] = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+    const headers = rawRows[0] as string[];
+    const sampleRows = rawRows.slice(1, 4);
 
-    console.log('Audit data extracted', { rowCount: data.length });
+    const expectedFields = ['Date', 'Invoice Number', 'GSTIN', 'Amount', 'GST Rate', 'GST Amount', 'Vendor'];
+    
+    let mapping: Record<string, string> = {};
+    const hasExactMatch = expectedFields.every(field => headers.includes(field));
+
+    if (!hasExactMatch && process.env.GEMINI_API_KEY) {
+      console.log('Headers do not match perfectly, requesting AI mapping...');
+      try {
+        const { GoogleGenAI } = await import('@google/genai');
+        const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const mapPrompt = `Given these headers from a financial spreadsheet: ${JSON.stringify(headers)}
+        And these sample rows: ${JSON.stringify(sampleRows)}
+        
+        Map them to these standard fields: ${JSON.stringify(expectedFields)}
+        Return ONLY a JSON object where keys are the standard fields and values are the corresponding headers from the input. 
+        If a field is missing, use null.
+        Example: {"GSTIN": "Tax Number", "Amount": "Total Value"}`;
+
+        const result = await genAI.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: [{ role: 'user', parts: [{ text: mapPrompt }] }]
+        });
+        
+        const mapText = result.text.replace(/```json|```/g, '').trim();
+        mapping = JSON.parse(mapText);
+        console.log('AI Mapping received:', mapping);
+      } catch (err) {
+        console.error('AI Mapping failed, falling back to positional or exact matching:', err);
+      }
+    }
+
+    // Process data with mapping
+    const data: Transaction[] = rawRows.slice(1).map(row => {
+      const obj: any = {};
+      expectedFields.forEach((field, idx) => {
+        const mappedHeader = mapping[field] || field;
+        const headerIdx = headers.indexOf(mappedHeader);
+        if (headerIdx !== -1) {
+          obj[field] = row[headerIdx];
+        } else if (!mapping[field] && idx < row.length) {
+          // Fallback to positional if no mapping and it's a standard order
+          obj[field] = row[idx];
+        }
+      });
+      return obj as Transaction;
+    }).filter(row => row['Invoice Number'] || row.Vendor); // Filter empty rows
+
+    console.log('Audit data processed', { rowCount: data.length });
 
     const flaggedIssues: FlaggedIssue[] = [];
     const invoiceNumbers = new Set<string>();
