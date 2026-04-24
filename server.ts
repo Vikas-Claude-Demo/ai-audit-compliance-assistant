@@ -255,15 +255,23 @@ app.post('/api/review', express.json(), async (req, res) => {
     IMPORTANT: In your explanation, ALWAYS refer to specific issues using their Row Index (e.g., "At Row 45, we see...") to provide direct context.
     Keep it very professional, structured with markdown, and concise.`;
 
-    const response = await genAI.models.generateContent({
+    const result = await genAI.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
 
-    res.json({ text: response.text });
+    if (!result || !result.text) {
+      console.warn('AI returned empty response or was blocked by safety settings');
+      return res.status(500).json({ error: 'AI returned an empty response. This may be due to safety filters.' });
+    }
+
+    res.json({ text: result.text });
   } catch (error) {
-    console.error('AI Error:', error);
-    res.status(500).json({ error: 'Failed to generate AI insights' });
+    console.error('Detailed AI Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate AI insights', 
+      details: error instanceof Error ? error.message : String(error) 
+    });
   }
 });
 
