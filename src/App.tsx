@@ -5,7 +5,6 @@ import {
   Cpu, LayoutDashboard, Eye, X, Play, ArrowUpDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
 
 // Types from server
@@ -91,7 +90,7 @@ const DEMO_CSV = `Date,Invoice Number,GSTIN,Amount,GST Rate,GST Amount,Vendor
 2026-04-28,INV054,24VFRBG3333B1Z4,7600,12,912,Retail Desk
 2026-04-28,INV055,24TGNHY3434C1Z5,10400,28,2912,Final Entry Ltd`;
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -197,33 +196,16 @@ export default function App() {
 
   const generateAIReview = async (issues: FlaggedIssue[], summary: Summary) => {
     try {
-      const issueSample = issues.slice(0, 15).map(i => ({
-        row: i.rowIndex,
-        invoice: i.invoiceNumber,
-        type: i.issue,
-        details: i.details
-      }));
-
-      const prompt = `You are a GST Compliance Expert. Review this audit summary.
-      Total Records: ${summary.totalRecords}
-      Flagged Issues: ${summary.flaggedCount}
-      
-      Specific Flagged Samples (Row Index included): ${JSON.stringify(issueSample)}
-      
-      Provide a strategic summary:
-      - Main recurring patterns of failure.
-      - Risks (legal and financial).
-      - Action plan for the business.
-      
-      IMPORTANT: In your explanation, ALWAYS refer to specific issues using their Row Index (e.g., "At Row 45, we see...") to provide direct context.
-      Keep it very professional, structured with markdown, and concise.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
+      const resp = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issues, summary })
       });
 
-      setAiInsight(response.text || 'Unable to generate AI insights.');
+      if (!resp.ok) throw new Error('AI review failed');
+      
+      const data = await resp.json();
+      setAiInsight(data.text || 'Unable to generate AI insights.');
     } catch (err) {
       console.error('AI Error:', err);
       setAiInsight('Audit successful, AI summary failed.');

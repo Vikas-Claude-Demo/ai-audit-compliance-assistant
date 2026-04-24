@@ -158,6 +158,49 @@ app.post('/api/audit', upload.single('file'), async (req, res) => {
   }
 });
 
+app.post('/api/review', express.json(), async (req, res) => {
+  const { issues, summary } = req.body;
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({ error: 'Gemini API key not configured on server' });
+  }
+
+  try {
+    const { GoogleGenAI } = await import('@google/genai');
+    const genAI = new GoogleGenAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    const issueSample = issues.slice(0, 15).map((i: any) => ({
+      row: i.rowIndex,
+      invoice: i.invoiceNumber,
+      type: i.issue,
+      details: i.details
+    }));
+
+    const prompt = `You are a GST Compliance Expert. Review this audit summary.
+    Total Records: ${summary.totalRecords}
+    Flagged Issues: ${summary.flaggedCount}
+    
+    Specific Flagged Samples (Row Index included): ${JSON.stringify(issueSample)}
+    
+    Provide a strategic summary:
+    - Main recurring patterns of failure.
+    - Risks (legal and financial).
+    - Action plan for the business.
+    
+    IMPORTANT: In your explanation, ALWAYS refer to specific issues using their Row Index (e.g., "At Row 45, we see...") to provide direct context.
+    Keep it very professional, structured with markdown, and concise.`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    res.json({ text: response.text() });
+  } catch (error) {
+    console.error('AI Error:', error);
+    res.status(500).json({ error: 'Failed to generate AI insights' });
+  }
+});
+
 // ... (previous imports and logic)
 
 export default app;
