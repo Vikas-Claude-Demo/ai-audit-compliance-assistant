@@ -292,11 +292,11 @@ async function generateWithFallback(prompt: string) {
   if (!apiKey) return null;
 
   const genAI = new GoogleGenAI({ apiKey });
-  // Only use gemini-2.0 family — 1.5 models return 404 for this API key
   const models = [
+    'gemini-2.5-flash',
     'gemini-2.0-flash',
+    'gemini-2.5-flash-lite',
     'gemini-2.0-flash-lite',
-    'gemini-2.5-flash-preview-04-17',
   ];
   
   let lastError: any = null;

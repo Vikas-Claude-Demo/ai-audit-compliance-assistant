@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "TSX_TSCONFIG_PATH=/dev/null tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
